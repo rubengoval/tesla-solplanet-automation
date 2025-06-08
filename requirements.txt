@@ -1,3 +1,5 @@
 # requirements.txt (versão simplificada)
+Flask
 requests
+gunicorn
 teslapy
