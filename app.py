@@ -1,4 +1,4 @@
-# app.py (VFinal - Produção na Nuvem - Formatação Corrigida)
+# app.py (VFinal v2 - Estrutura Corrigida para Gunicorn)
 
 import os
 import time
@@ -32,8 +32,7 @@ def get_solplanet_data():
     
     print("A obter dados da Solplanet...")
     try:
-        # NOTA: Este URL é um exemplo, precisa de ser confirmado quando tiver acesso à API
-        url = f"https://cloud.solplanet.net/api/v1/inverters/{SOLPLANET_INVERTER_ID}/data"
+        url = f"https://cloud.solplanet.net/api/v1/inverters/{SOLPLANET_INVERTER_ID}/data" # Exemplo de URL
         headers = {"Authorization": f"Bearer {SOLPLANET_API_KEY}"}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
@@ -49,7 +48,6 @@ def get_solplanet_data():
 def run_automation_logic(tesla_client):
     """O ciclo principal que corre para sempre."""
     print("--- A iniciar novo ciclo de automação ---")
-    
     try:
         vehicles = tesla_client.vehicle_list()
         if not vehicles:
@@ -70,7 +68,6 @@ def run_automation_logic(tesla_client):
         battery_level = charge_state['battery_level']
 
         print(f"Estado atual: Bateria a {battery_level}%, Carregando: {is_charging}")
-
         solar_power = get_solplanet_data()
 
         if not is_charging and solar_power >= MIN_SOLAR_PARA_INICIAR_KW and battery_level < MAX_BATTERY_SOC:
@@ -81,21 +78,15 @@ def run_automation_logic(tesla_client):
             my_car.command('CHARGE_STOP')
         else:
             print("Nenhuma condição de automação atingida. A manter estado atual.")
-
     except VehicleError as e:
         print(f"Ocorreu um erro de comunicação com o veículo: {e}")
     except Exception as e:
         print(f"Ocorreu um erro inesperado no ciclo de automação: {e}")
 
-# --- PONTO DE ENTRADA E TAREFA DE FUNDO ---
-@app.route('/')
-def home():
-    return "Serviço de automação Tesla está vivo e a correr."
-
+# --- TAREFA DE FUNDO ---
 def background_task():
     """Inicializa o cliente Tesla e entra no ciclo infinito."""
     print("A inicializar a tarefa de fundo...")
-    
     try:
         with open('cache.json', 'w') as f:
             f.write(TESLA_CACHE_DATA)
@@ -112,14 +103,22 @@ def background_task():
         print(f"A aguardar {CHECK_INTERVAL_SECONDS} segundos para o próximo ciclo.")
         time.sleep(CHECK_INTERVAL_SECONDS)
 
+# --- PONTO DE ENTRADA E ARRANQUE DA AUTOMAÇÃO ---
+@app.route('/')
+def home():
+    return "Serviço de automação Tesla está vivo e a correr."
+
+# ESTA PARTE FOI MOVIDA PARA FORA DO "IF"
+# Agora, o Gunicorn irá executar este código ao carregar o ficheiro.
+if not TESLA_EMAIL or not TESLA_CACHE_DATA:
+    print("ERRO CRÍTICO: As variáveis de ambiente TESLA_EMAIL ou TESLA_CACHE_JSON não estão definidas! A tarefa de automação não pode começar.")
+else:
+    automation_thread = threading.Thread(target=background_task)
+    automation_thread.daemon = True
+    automation_thread.start()
+
+# Este bloco só é executado se corrermos o ficheiro localmente com "python app.py"
 if __name__ == '__main__':
-    if not TESLA_EMAIL or not TESLA_CACHE_DATA:
-        print("ERRO CRÍTICO: As variáveis de ambiente TESLA_EMAIL ou TESLA_CACHE_JSON não estão definidas! A sair.")
-    else:
-        automation_thread = threading.Thread(target=background_task)
-        automation_thread.daemon = True
-        automation_thread.start()
-        
-        print("Servidor web a iniciar. A tarefa de automação está a correr em segundo plano.")
-        port = int(os.environ.get('PORT', 5000))
-        app.run(host='0.0.0.0', port=port)
+    print("A iniciar o servidor de desenvolvimento Flask (apenas para teste local).")
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
