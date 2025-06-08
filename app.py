@@ -1,4 +1,4 @@
-# app.py (VFinal - Automação na Nuvem)
+# app.py (VFinal - Produção na Nuvem - Formatação Corrigida)
 
 import os
 import time
@@ -9,23 +9,21 @@ from teslapy import Tesla, VehicleError
 import threading
 
 # --- CONFIGURAÇÃO LIDA DO RENDER ---
-# Estes valores são configurados como Variáveis de Ambiente no Render
 TESLA_EMAIL = os.environ.get('TESLA_EMAIL')
 TESLA_CACHE_DATA = os.environ.get('TESLA_CACHE_JSON')
 SOLPLANET_API_KEY = os.environ.get('SOLPLANET_API_KEY')
 SOLPLANET_INVERTER_ID = os.environ.get('SOLPLANET_INVERTER_ID')
 
-# Suas regras de automação
-MIN_SOLAR_PARA_INICIAR_KW = 2.0  # Iniciar a carregar acima de 2.0 kW
-MIN_SOLAR_PARA_PARAR_KW = 0.5   # Parar de carregar abaixo de 0.5 kW
-MAX_BATTERY_SOC = 90            # Parar de carregar quando atingir 90%
-CHECK_INTERVAL_SECONDS = 300 # Verificar a cada 5 minutos (300 segundos)
+# --- REGRAS DE AUTOMAÇÃO ---
+MIN_SOLAR_PARA_INICIAR_KW = 2.0
+MIN_SOLAR_PARA_PARAR_KW = 0.5
+MAX_BATTERY_SOC = 90
+CHECK_INTERVAL_SECONDS = 300
 
-# --- INICIALIZAÇÃO DO FLASK (Para o Render) ---
+# --- INICIALIZAÇÃO DO FLASK ---
 app = Flask(__name__)
 
 # --- FUNÇÕES DAS APIS ---
-
 def get_solplanet_data():
     """Obtém dados de produção do inversor Solplanet."""
     if not SOLPLANET_API_KEY or SOLPLANET_API_KEY == 'ainda_a_esperar':
@@ -35,7 +33,7 @@ def get_solplanet_data():
     print("A obter dados da Solplanet...")
     try:
         # NOTA: Este URL é um exemplo, precisa de ser confirmado quando tiver acesso à API
-        url = f"https://cloud.solplanet.net/api/v1/inverters/{SOLPLANET_INVERTER_ID}/data" 
+        url = f"https://cloud.solplanet.net/api/v1/inverters/{SOLPLANET_INVERTER_ID}/data"
         headers = {"Authorization": f"Bearer {SOLPLANET_API_KEY}"}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
@@ -48,7 +46,6 @@ def get_solplanet_data():
         return 0
 
 # --- LÓGICA PRINCIPAL DA AUTOMAÇÃO ---
-
 def run_automation_logic(tesla_client):
     """O ciclo principal que corre para sempre."""
     print("--- A iniciar novo ciclo de automação ---")
@@ -62,13 +59,11 @@ def run_automation_logic(tesla_client):
         my_car = vehicles[0]
         print(f"Veículo encontrado: {my_car['display_name']}")
         
-        # Acordar o carro de forma paciente se necessário
         if my_car['state'] != 'online':
             print(f"O veículo está '{my_car['state']}'. A tentar acordar...")
             my_car.sync_wake_up()
             print("O veículo está agora online.")
         
-        # Obter os dados necessários
         my_car.get_vehicle_data()
         charge_state = my_car['charge_state']
         is_charging = charge_state['charging_state'] == 'Charging'
@@ -76,13 +71,55 @@ def run_automation_logic(tesla_client):
 
         print(f"Estado atual: Bateria a {battery_level}%, Carregando: {is_charging}")
 
-        # Obter dados da produção solar
         solar_power = get_solplanet_data()
 
-        # Tomar a decisão
         if not is_charging and solar_power >= MIN_SOLAR_PARA_INICIAR_KW and battery_level < MAX_BATTERY_SOC:
             print(f"CONDIÇÃO ATINGIDA: Produção solar ({solar_power} kW) é suficiente. A iniciar carregamento.")
             my_car.command('CHARGE_START')
         elif is_charging and (solar_power < MIN_SOLAR_PARA_PARAR_KW or battery_level >= MAX_BATTERY_SOC):
             print(f"CONDIÇÃO ATINGIDA: Produção solar ({solar_power} kW) insuficiente ou bateria cheia. A parar carregamento.")
             my_car.command('CHARGE_STOP')
+        else:
+            print("Nenhuma condição de automação atingida. A manter estado atual.")
+
+    except VehicleError as e:
+        print(f"Ocorreu um erro de comunicação com o veículo: {e}")
+    except Exception as e:
+        print(f"Ocorreu um erro inesperado no ciclo de automação: {e}")
+
+# --- PONTO DE ENTRADA E TAREFA DE FUNDO ---
+@app.route('/')
+def home():
+    return "Serviço de automação Tesla está vivo e a correr."
+
+def background_task():
+    """Inicializa o cliente Tesla e entra no ciclo infinito."""
+    print("A inicializar a tarefa de fundo...")
+    
+    try:
+        with open('cache.json', 'w') as f:
+            f.write(TESLA_CACHE_DATA)
+        print("Ficheiro cache.json criado com sucesso a partir das variáveis de ambiente.")
+    except Exception as e:
+        print(f"ERRO CRÍTICO ao criar o cache.json: {e}")
+        return
+
+    tesla_client = Tesla(TESLA_EMAIL, cache_file='cache.json')
+    print("Cliente Tesla inicializado com sucesso.")
+
+    while True:
+        run_automation_logic(tesla_client)
+        print(f"A aguardar {CHECK_INTERVAL_SECONDS} segundos para o próximo ciclo.")
+        time.sleep(CHECK_INTERVAL_SECONDS)
+
+if __name__ == '__main__':
+    if not TESLA_EMAIL or not TESLA_CACHE_DATA:
+        print("ERRO CRÍTICO: As variáveis de ambiente TESLA_EMAIL ou TESLA_CACHE_JSON não estão definidas! A sair.")
+    else:
+        automation_thread = threading.Thread(target=background_task)
+        automation_thread.daemon = True
+        automation_thread.start()
+        
+        print("Servidor web a iniciar. A tarefa de automação está a correr em segundo plano.")
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port)
