@@ -1,5 +1,3 @@
-# requirements.txt
-Flask
+# requirements.txt (versão simplificada)
 requests
-gunicorn
 teslapy
